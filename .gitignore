@@ -1,0 +1,11 @@
+.venv/
+.perfil_navegador/
+materiais_moodle/
+dados_github/
+dados_linkedin/
+dados_extra/
+__pycache__/
+*.pyc
+.env
+token.txt
+.claude/

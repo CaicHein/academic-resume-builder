@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel — Trajetória Acadêmica</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --painel: #171d2c;
+    --painel2: #1e2536;
+    --borda: #2a3348;
+    --texto: #e6e9f0;
+    --texto-fraco: #8b93a7;
+    --azul: #4c8dff;
+    --verde: #3ecf8e;
+    --amarelo: #e6b800;
+    --vermelho: #ff5c5c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--texto);
+  }
+  header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--borda);
+  }
+  header h1 { margin: 0 0 4px; font-size: 20px; }
+  header p { margin: 0; color: var(--texto-fraco); font-size: 13px; }
+
+  nav.abas {
+    display: flex;
+    gap: 4px;
+    padding: 0 28px;
+    border-bottom: 1px solid var(--borda);
+    background: var(--painel);
+  }
+  nav.abas button {
+    background: none;
+    border: none;
+    color: var(--texto-fraco);
+    padding: 12px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    border-bottom: 2px solid transparent;
+  }
+  nav.abas button.ativa {
+    color: var(--texto);
+    border-bottom-color: var(--azul);
+  }
+
+  main { padding: 24px 28px; max-width: 1100px; margin: 0 auto; }
+  section.aba { display: none; }
+  section.aba.ativa { display: block; }
+
+  .grade {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+  }
+  .cartao {
+    background: var(--painel);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .cartao h3 { margin: 0 0 4px; font-size: 15px; }
+  .cartao p.desc { margin: 0 0 12px; color: var(--texto-fraco); font-size: 12.5px; line-height: 1.4; }
+  .linha-acao { display: flex; align-items: center; gap: 10px; }
+
+  input.campo-texto {
+    background: var(--painel2);
+    color: var(--texto);
+    border: 1px solid var(--borda);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    flex: 1;
+    min-width: 220px;
+  }
+
+  button.executar {
+    background: var(--azul);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 14px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  button.executar:disabled { opacity: 0.5; cursor: default; }
+  button.secundario {
+    background: var(--painel2);
+    color: var(--texto);
+    border: 1px solid var(--borda);
+    border-radius: 6px;
+    padding: 7px 14px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  .selo {
+    font-size: 11.5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+  }
+  .selo.rodando { background: rgba(230,184,0,0.15); color: var(--amarelo); }
+  .selo.concluido { background: rgba(62,207,142,0.15); color: var(--verde); }
+  .selo.erro { background: rgba(255,92,92,0.15); color: var(--vermelho); }
+  .selo.disponivel { background: rgba(62,207,142,0.15); color: var(--verde); }
+  .selo.indisponivel { background: rgba(139,147,167,0.15); color: var(--texto-fraco); }
+
+  pre.log {
+    margin-top: 10px;
+    background: #0a0e17;
+    border: 1px solid var(--borda);
+    border-radius: 6px;
+    padding: 10px;
+    max-height: 220px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: none;
+  }
+  pre.log.visivel { display: block; }
+
+  h2.titulo-secao { font-size: 16px; margin: 28px 0 12px; }
+  h2.titulo-secao:first-child { margin-top: 0; }
+
+  .caixa-upload {
+    border: 2px dashed var(--borda);
+    border-radius: 10px;
+    padding: 30px;
+    text-align: center;
+    color: var(--texto-fraco);
+  }
+  .caixa-upload.arrastando { border-color: var(--azul); color: var(--texto); }
+  ul.arquivos { list-style: none; padding: 0; margin: 14px 0 0; }
+  ul.arquivos li {
+    background: var(--painel2);
+    border: 1px solid var(--borda);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  textarea#infoAdicional {
+    width: 100%;
+    min-height: 220px;
+    background: var(--painel2);
+    color: var(--texto);
+    border: 1px solid var(--borda);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: inherit;
+    font-size: 14px;
+    resize: vertical;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table th, table td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--borda);
+  }
+  table th { color: var(--texto-fraco); font-weight: 600; font-size: 12px; }
+  table tr:hover td { background: var(--painel2); }
+
+  tr.linha-disciplina { cursor: pointer; }
+  tr.linha-disciplina .seta { color: var(--texto-fraco); width: 18px; }
+  tr.linha-detalhe td { background: #0a0e17; padding: 18px 20px; }
+  .detalhe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .detalhe-grid .bloco-full { grid-column: 1 / -1; }
+  .detalhe-grid h4 {
+    margin: 0 0 6px; font-size: 12.5px; text-transform: uppercase;
+    letter-spacing: 0.03em; color: var(--texto-fraco);
+  }
+  .detalhe-grid .campo { margin-bottom: 14px; font-size: 13px; line-height: 1.5; }
+  .detalhe-grid .campo p { margin: 0; white-space: pre-wrap; }
+  .detalhe-grid table { font-size: 12.5px; margin-bottom: 6px; }
+  .detalhe-grid table th, .detalhe-grid table td { padding: 5px 8px; }
+  .aviso-inline { color: var(--amarelo); font-size: 12.5px; }
+
+  /* --- sparkline de médias --- */
+  #sparklineMedia { margin-bottom: 8px; }
+  .spark-svg { width: 100%; height: 150px; overflow: visible; }
+  .spark-linha { fill: none; stroke: #3987e5; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .spark-ponto { fill: #3987e5; }
+  .spark-hit { fill: transparent; cursor: crosshair; }
+  .spark-eixo-label { fill: var(--texto-fraco); font-size: 10px; }
+  .spark-grid { stroke: var(--borda); stroke-width: 1; }
+  .spark-crosshair { stroke: var(--texto-fraco); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; pointer-events: none; }
+  .spark-tooltip {
+    position: absolute; background: var(--painel2); border: 1px solid var(--borda);
+    border-radius: 6px; padding: 6px 10px; font-size: 12px; pointer-events: none;
+    opacity: 0; transform: translate(-50%, -110%); transition: opacity 0.1s;
+    white-space: nowrap;
+  }
+  .spark-tooltip .valor { font-weight: 700; font-size: 14px; color: var(--texto); }
+  .spark-tooltip .rotulo { color: var(--texto-fraco); }
+  .spark-wrap { position: relative; }
+  .escala-legenda { display: flex; align-items: center; gap: 8px; margin: 6px 0 22px; font-size: 11.5px; color: var(--texto-fraco); }
+  .escala-legenda .barra { display: flex; height: 8px; border-radius: 4px; overflow: hidden; width: 140px; }
+  .escala-legenda .barra span { flex: 1; }
+
+  /* --- timeline vertical --- */
+  .timeline { position: relative; padding-left: 28px; }
+  .timeline::before {
+    content: ''; position: absolute; left: 7px; top: 6px; bottom: 6px;
+    width: 2px; background: var(--borda);
+  }
+  .timeline-item { position: relative; margin-bottom: 18px; }
+  .timeline-dot {
+    position: absolute; left: -29px; top: 3px; width: 16px; height: 16px;
+    border-radius: 50%; border: 1.5px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--borda);
+  }
+  .timeline-item .cartao h3 { font-size: 14px; display: flex; align-items: baseline; gap: 8px; }
+  .timeline-item .cartao h3 .media-valor { font-size: 12px; font-weight: 600; color: var(--texto-fraco); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+    background: var(--painel2); border: 1px solid var(--borda); border-radius: 999px;
+    padding: 3px 10px 3px 8px;
+  }
+  .chip .bolinha { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .status-good { background: #0ca30c; }
+  .status-warning { background: #fab219; }
+  .status-serious { background: #ec835a; }
+  .status-critical { background: #d03b3b; }
+  .status-neutro { background: var(--texto-fraco); }
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .status-grid .cartao { padding: 12px 14px; }
+  .status-grid .cartao .rotulo { font-size: 13px; margin-bottom: 6px; }
+  .vazio { color: var(--texto-fraco); font-size: 13px; padding: 20px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Painel — Trajetória Acadêmica</h1>
+  <p>Servidor local, só nesta máquina. Nada aqui é obrigatório — cada fonte funciona independente das outras.</p>
+</header>
+
+<nav class="abas">
+  <button data-aba="coletores" class="ativa">Coletores</button>
+  <button data-aba="linkedin">LinkedIn</button>
+  <button data-aba="extra">Informações adicionais</button>
+  <button data-aba="visualizar">Visualizar dados</button>
+  <button data-aba="timeline">Timeline</button>
+</nav>
+
+<main>
+
+  <section class="aba ativa" id="aba-coletores">
+    <div class="cartao" id="configApiKey" style="margin-bottom:18px;">
+      <h3>Chave da API da Claude</h3>
+      <p class="desc">
+        Necessária pra "Currículo — gerar competências (LLM)". Pega em
+        <a href="https://console.anthropic.com" target="_blank" style="color:var(--azul);">console.anthropic.com</a>
+        — conta separada da assinatura Claude Pro, com billing próprio por token.
+        Fica só no seu .env local; depois de salva, não é reexibida aqui.
+      </p>
+      <div class="linha-acao">
+        <input type="password" id="inputAnthropicKey" class="campo-texto" placeholder="sk-ant-...">
+        <button class="executar" id="salvarAnthropicKey">Salvar</button>
+        <span class="selo" id="seloAnthropicKey" style="display:none;"></span>
+      </div>
+    </div>
+
+    <div id="gradeTarefas" class="grade"></div>
+  </section>
+
+  <section class="aba" id="aba-linkedin">
+    <h2 class="titulo-secao">Enviar arquivo do LinkedIn</h2>
+    <p style="color:var(--texto-fraco); font-size:13px; max-width:640px;">
+      Sem login automatizado aqui de propósito (risco de banimento — ver CLAUDE.md).
+      Exporte seus dados pelo próprio LinkedIn (Configurações → Privacidade de dados →
+      "Obter uma cópia dos seus dados", ou "Salvar como PDF" no seu perfil) e solte o
+      arquivo abaixo.
+    </p>
+    <div class="caixa-upload" id="caixaUpload">
+      Arraste o arquivo aqui, ou
+      <label style="color:var(--azul); cursor:pointer;">
+        clique pra escolher<input type="file" id="inputArquivoLinkedin" style="display:none;">
+      </label>
+    </div>
+    <ul class="arquivos" id="listaArquivosLinkedin"></ul>
+  </section>
+
+  <section class="aba" id="aba-extra">
+    <h2 class="titulo-secao">Informações adicionais</h2>
+    <p style="color:var(--texto-fraco); font-size:13px; max-width:640px;">
+      Qualquer coisa que não vem de nenhuma fonte automática: contexto de um semestre
+      (ex.: "fiz IC + estágio nesse período"), projetos fora do GitHub, certificados,
+      o que quiser. Texto livre — vira insumo extra pro gerador de competências depois.
+    </p>
+    <textarea id="infoAdicional" placeholder="Escreva aqui..."></textarea>
+    <div style="margin-top:10px; display:flex; align-items:center; gap:10px;">
+      <button class="executar" id="salvarInfoExtra">Salvar</button>
+      <span id="statusInfoExtra" style="color:var(--texto-fraco); font-size:13px;"></span>
+    </div>
+  </section>
+
+  <section class="aba" id="aba-visualizar">
+    <h2 class="titulo-secao">O que já foi coletado</h2>
+    <div class="status-grid" id="statusGrid"></div>
+
+    <h2 class="titulo-secao">Trajetória acadêmica</h2>
+    <div id="blocoTrajetoria"><p class="vazio">Carregando…</p></div>
+
+    <h2 class="titulo-secao">GitHub</h2>
+    <div id="blocoGithub"><p class="vazio">Carregando…</p></div>
+  </section>
+
+  <section class="aba" id="aba-timeline">
+    <h2 class="titulo-secao">Evolução da média por semestre</h2>
+    <div id="sparklineMedia"></div>
+    <h2 class="titulo-secao">Linha do tempo</h2>
+    <div id="listaTimeline"><p class="vazio">Carregando…</p></div>
+  </section>
+
+</main>
+
+<script>
+const $ = (sel, el=document) => el.querySelector(sel);
+const $$ = (sel, el=document) => [...el.querySelectorAll(sel)];
+
+// --- navegação por abas ---
+$$('nav.abas button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('nav.abas button').forEach(b => b.classList.remove('ativa'));
+    $$('section.aba').forEach(s => s.classList.remove('ativa'));
+    btn.classList.add('ativa');
+    $('#aba-' + btn.dataset.aba).classList.add('ativa');
+    if (btn.dataset.aba === 'visualizar') carregarVisualizacao();
+    if (btn.dataset.aba === 'linkedin') carregarArquivosLinkedin();
+    if (btn.dataset.aba === 'extra') carregarInfoExtra();
+    if (btn.dataset.aba === 'timeline') carregarTimeline();
+  });
+});
+
+// --- Coletores ---
+const pollers = {};
+
+async function montarTarefas() {
+  const tarefas = await fetch('/api/tarefas').then(r => r.json());
+  const grade = $('#gradeTarefas');
+  grade.innerHTML = '';
+  for (const [id, t] of Object.entries(tarefas)) {
+    const cartao = document.createElement('div');
+    cartao.className = 'cartao';
+    cartao.innerHTML = `
+      <h3>${t.rotulo}</h3>
+      <p class="desc">${t.descricao}</p>
+      <div class="linha-acao">
+        <button class="executar" data-id="${id}">Executar</button>
+        <span class="selo" id="selo-${id}" style="display:none;"></span>
+      </div>
+      <pre class="log" id="log-${id}"></pre>
+    `;
+    grade.appendChild(cartao);
+  }
+  $$('.executar[data-id]').forEach(btn => {
+    btn.addEventListener('click', () => executarTarefa(btn.dataset.id));
+  });
+}
+
+async function executarTarefa(id) {
+  const resp = await fetch(`/api/executar/${id}`, { method: 'POST' });
+  const dado = await resp.json();
+  if (resp.status === 409) {
+    acompanharTarefa(id, dado.task_id);
+    return;
+  }
+  if (!resp.ok) {
+    alert('Erro ao iniciar: ' + (dado.erro || resp.status));
+    return;
+  }
+  acompanharTarefa(id, dado.task_id);
+}
+
+function acompanharTarefa(id, taskId) {
+  const selo = $(`#selo-${id}`);
+  const log = $(`#log-${id}`);
+  const botao = $(`.executar[data-id="${id}"]`);
+  log.classList.add('visivel');
+  botao.disabled = true;
+  selo.style.display = 'inline-block';
+
+  if (pollers[id]) clearInterval(pollers[id]);
+  pollers[id] = setInterval(async () => {
+    const r = await fetch(`/api/tarefa/${taskId}`);
+    if (!r.ok) { clearInterval(pollers[id]); return; }
+    const st = await r.json();
+    selo.textContent = st.status;
+    selo.className = 'selo ' + st.status;
+    log.textContent = st.log.join('\n');
+    log.scrollTop = log.scrollHeight;
+    if (st.status !== 'rodando') {
+      clearInterval(pollers[id]);
+      botao.disabled = false;
+    }
+  }, 1200);
+}
+
+// --- Chave da API da Claude ---
+async function carregarStatusAnthropicKey() {
+  const dado = await fetch('/api/configuracao/anthropic-key').then(r => r.json());
+  const selo = $('#seloAnthropicKey');
+  selo.style.display = 'inline-block';
+  selo.textContent = dado.configurada ? 'configurada' : 'não configurada';
+  selo.className = 'selo ' + (dado.configurada ? 'disponivel' : 'indisponivel');
+}
+
+$('#salvarAnthropicKey').addEventListener('click', async () => {
+  const chave = $('#inputAnthropicKey').value;
+  const r = await fetch('/api/configuracao/anthropic-key', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chave }),
+  });
+  if (r.ok) {
+    $('#inputAnthropicKey').value = '';
+    carregarStatusAnthropicKey();
+  } else {
+    alert('Erro ao salvar a chave.');
+  }
+});
+
+// --- LinkedIn ---
+const caixaUpload = $('#caixaUpload');
+const inputArquivo = $('#inputArquivoLinkedin');
+
+caixaUpload.addEventListener('dragover', e => { e.preventDefault(); caixaUpload.classList.add('arrastando'); });
+caixaUpload.addEventListener('dragleave', () => caixaUpload.classList.remove('arrastando'));
+caixaUpload.addEventListener('drop', e => {
+  e.preventDefault();
+  caixaUpload.classList.remove('arrastando');
+  if (e.dataTransfer.files.length) enviarArquivoLinkedin(e.dataTransfer.files[0]);
+});
+inputArquivo.addEventListener('change', () => {
+  if (inputArquivo.files.length) enviarArquivoLinkedin(inputArquivo.files[0]);
+});
+
+async function enviarArquivoLinkedin(arquivo) {
+  const form = new FormData();
+  form.append('arquivo', arquivo);
+  const r = await fetch('/api/upload/linkedin', { method: 'POST', body: form });
+  if (!r.ok) { alert('Falha ao enviar o arquivo.'); return; }
+  carregarArquivosLinkedin();
+}
+
+async function carregarArquivosLinkedin() {
+  const dado = await fetch('/api/dados/linkedin/arquivos').then(r => r.json());
+  const lista = $('#listaArquivosLinkedin');
+  lista.innerHTML = '';
+  if (!dado.arquivos.length) {
+    lista.innerHTML = '<p class="vazio">Nenhum arquivo enviado ainda.</p>';
+    return;
+  }
+  for (const a of dado.arquivos) {
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${a.nome}</span><span>${(a.tamanho_bytes/1024).toFixed(0)} KB</span>`;
+    lista.appendChild(li);
+  }
+}
+
+// --- Informações adicionais ---
+async function carregarInfoExtra() {
+  const dado = await fetch('/api/informacoes-adicionais').then(r => r.json());
+  $('#infoAdicional').value = dado.texto || '';
+}
+
+$('#salvarInfoExtra').addEventListener('click', async () => {
+  const texto = $('#infoAdicional').value;
+  const status = $('#statusInfoExtra');
+  status.textContent = 'salvando…';
+  const r = await fetch('/api/informacoes-adicionais', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ texto }),
+  });
+  status.textContent = r.ok ? 'salvo ✓' : 'erro ao salvar';
+  setTimeout(() => status.textContent = '', 2500);
+});
+
+// --- Visualizar dados ---
+async function carregarVisualizacao() {
+  const status = await fetch('/api/dados/status').then(r => r.json());
+  const grid = $('#statusGrid');
+  const rotulos = {
+    trajetoria_academica: 'Trajetória acadêmica',
+    notas: 'Notas do Moodle',
+    jupiter_disciplinas: 'Ementas do Jupiter',
+    historico_pdf: 'Histórico (PDF)',
+    github: 'GitHub',
+    linkedin: 'LinkedIn',
+    informacoes_adicionais: 'Info. adicionais',
+    competencias: 'Currículo — competências (LLM)',
+    curriculo_tex: 'Currículo — .tex',
+  };
+  grid.innerHTML = '';
+  for (const [chave, rotulo] of Object.entries(rotulos)) {
+    const info = status[chave] || {};
+    const disponivel = info.existe;
+    const div = document.createElement('div');
+    div.className = 'cartao';
+    div.innerHTML = `
+      <div class="rotulo">${rotulo}</div>
+      <span class="selo ${disponivel ? 'disponivel' : 'indisponivel'}">
+        ${disponivel ? 'disponível' : 'ainda não coletado'}
+      </span>
+    `;
+    grid.appendChild(div);
+  }
+
+  await carregarTrajetoria();
+  await carregarGithub();
+}
+
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+function nl2br(str) {
+  if (!str) return '';
+  return escapeHtml(str).replace(/\n/g, '<br>');
+}
+
+function detalheDisciplinaHTML(disc) {
+  const ej = disc.disciplina; // ementa do Jupiter, pode não existir
+  const notas = disc.notas || [];
+  const historico = disc.historico || [];
+  const urlMoodle = disc.moodle_id
+    ? `https://edisciplinas.usp.br/course/view.php?id=${disc.moodle_id}`
+    : null;
+
+  let html = '<div class="detalhe-grid">';
+
+  // --- ementa (Jupiter) ---
+  if (ej) {
+    html += `
+      <div class="bloco-full campo">
+        <h4>Ementa (Jupiter)</h4>
+        <p style="color:var(--texto-fraco); font-size:12.5px; margin-bottom:8px;">
+          ${escapeHtml(ej.unidade || '')}${ej.departamento ? ' · ' + escapeHtml(ej.departamento) : ''}
+          — ${escapeHtml(ej.creditos_aula ?? '—')} créditos aula, ${escapeHtml(ej.creditos_trabalho ?? '—')} trabalho,
+          ${escapeHtml(ej.carga_horaria_total || '—')}
+        </p>
+      </div>
+      <div class="campo"><h4>Ementa</h4><p>${nl2br(ej.ementa) || '—'}</p></div>
+      <div class="campo"><h4>Objetivos</h4><p>${nl2br(ej.objetivos) || '—'}</p></div>
+      <div class="bloco-full campo"><h4>Conteúdo Programático</h4><p>${nl2br(ej.conteudo_programatico) || '—'}</p></div>
+      <div class="campo"><h4>Método de Avaliação</h4><p>${nl2br(ej.metodo_avaliacao) || '—'}</p></div>
+      <div class="campo"><h4>Critério de Avaliação</h4><p>${nl2br(ej.criterio_avaliacao) || '—'}</p></div>
+      <div class="campo"><h4>Norma de Recuperação</h4><p>${nl2br(ej.norma_recuperacao) || '—'}</p></div>
+      <div class="campo"><h4>Docentes</h4><p>${(ej.docentes || []).map(d => escapeHtml(d.nome)).join('<br>') || '—'}</p></div>
+      <div class="bloco-full campo"><h4>Bibliografia</h4><p>${nl2br(ej.bibliografia) || '—'}</p></div>
+    `;
+  } else {
+    html += `<div class="bloco-full campo"><span class="aviso-inline">
+      Ementa não encontrada no Jupiter (status: ${escapeHtml(disc.status)}).
+      ${disc.candidatos ? 'Havia ' + disc.candidatos.length + ' candidato(s) ambíguo(s).' : ''}
+    </span></div>`;
+  }
+
+  // --- histórico ---
+  html += '<div class="bloco-full campo"><h4>Histórico (Jupiter)</h4>';
+  if (historico.length) {
+    html += '<table><thead><tr><th>Ano</th><th>Período</th><th>Créditos aula</th><th>Carga horária</th><th>Frequência</th><th>Nota</th><th>Situação</th></tr></thead><tbody>';
+    for (const h of historico) {
+      html += `<tr><td>${h.ano ?? '—'}</td><td>${escapeHtml(h.periodo) ?? '—'}</td>
+        <td>${h.creditos_aula ?? '—'}</td><td>${h.carga_horaria ?? '—'}</td>
+        <td>${h.frequencia ?? '—'}</td><td>${h.nota ?? '—'}</td><td>${escapeHtml(h.situacao)}</td></tr>`;
+    }
+    html += '</tbody></table>';
+  } else {
+    html += '<p style="color:var(--texto-fraco); font-size:12.5px;">Sem registro no histórico escolar.</p>';
+  }
+  html += '</div>';
+
+  // --- notas do Moodle ---
+  html += '<div class="bloco-full campo"><h4>Notas / entregas (Moodle)</h4>';
+  if (notas.length) {
+    html += '<table><thead><tr><th>Tipo</th><th>Categoria</th><th>Nome</th><th>Peso</th><th>Nota</th><th>%</th><th>Feedback</th></tr></thead><tbody>';
+    for (const n of notas) {
+      const nome = n.url
+        ? `<a href="${n.url}" target="_blank" style="color:var(--azul);">${escapeHtml(n.nome)}</a>`
+        : escapeHtml(n.nome);
+      html += `<tr${n.total ? ' style="font-weight:600;"' : ''}>
+        <td>${escapeHtml(n.tipo)}</td><td>${escapeHtml(n.categoria)}</td><td>${nome}</td>
+        <td>${escapeHtml(n.peso) || '—'}</td><td>${escapeHtml(n.nota) ?? '—'}</td>
+        <td>${escapeHtml(n.porcentagem) || '—'}</td><td>${escapeHtml(n.feedback) || ''}</td></tr>`;
+    }
+    html += '</tbody></table>';
+  } else {
+    html += '<p style="color:var(--texto-fraco); font-size:12.5px;">Nenhum item de nota coletado.</p>';
+  }
+  html += '</div>';
+
+  // --- links de origem (proveniência) ---
+  html += `<div class="bloco-full campo"><h4>Origem</h4><p style="font-size:12.5px;">
+    ${ej ? `<a href="${disc.origem_url}" target="_blank" style="color:var(--azul);">Jupiter (ementa)</a>` : ''}
+    ${urlMoodle ? ` · <a href="${urlMoodle}" target="_blank" style="color:var(--azul);">Moodle (disciplina)</a>` : ''}
+    ${disc.notas_url ? ` · <a href="${disc.notas_url}" target="_blank" style="color:var(--azul);">Moodle (livro de notas)</a>` : ''}
+  </p></div>`;
+
+  html += '</div>';
+  return html;
+}
+
+async function carregarTrajetoria() {
+  const bloco = $('#blocoTrajetoria');
+  const d = await fetch('/api/dados/trajetoria').then(r => r.json());
+  if (d.disponivel === false) {
+    bloco.innerHTML = '<p class="vazio">Ainda não coletado. Rode "Consolidar" e "Histórico — processar PDF" na aba Coletores.</p>';
+    return;
+  }
+  const p = d.perfil || {};
+  const disciplinas = d.disciplinas || [];
+  let html = `
+    <div class="cartao" style="margin-bottom:14px;">
+      <h3>${escapeHtml(p.aluno) || '—'}</h3>
+      <p class="desc">
+        ${escapeHtml(p.curso) || ''}${p.habilitacao ? ' — ' + escapeHtml(p.habilitacao) : ''}${p.modulo ? ' · ' + escapeHtml(p.modulo) : ''}<br>
+        Ingresso: ${escapeHtml(p.ingresso) || '—'}${p.forma_ingresso ? ' (' + escapeHtml(p.forma_ingresso) + ')' : ''}
+        · Classificação na carreira: ${escapeHtml(p.classificacao_na_carreira) || '—'}<br>
+        Créditos obtidos: ${escapeHtml(p.creditos_obtidos) || '—'}<br>
+        Média ponderada (com reprovações): ${p.media_ponderada_com_reprovacoes ?? '—'}
+        · Média normalizada: ${p.media_normalizada ?? '—'}
+        · Média ponderada do curso: ${p.media_ponderada_do_curso ?? '—'}
+      </p>
+    </div>
+  `;
+
+  if (p.creditos_por_tipo_obrigatoriedade) {
+    html += `<div class="cartao" style="margin-bottom:14px;">
+      <h4 style="margin:0 0 8px; font-size:12.5px; text-transform:uppercase; color:var(--texto-fraco);">
+        Créditos por tipo de obrigatoriedade</h4>
+      <table><thead><tr><th></th><th>Aula</th><th>Trabalho</th></tr></thead><tbody>`;
+    for (const [tipo, v] of Object.entries(p.creditos_por_tipo_obrigatoriedade)) {
+      html += `<tr><td>${escapeHtml(tipo)}</td><td>${v.aula}</td><td>${v.trabalho}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+  }
+
+  if (p.dispensas_especificas && p.dispensas_especificas.length) {
+    html += `<div class="cartao" style="margin-bottom:14px;">
+      <h4 style="margin:0 0 8px; font-size:12.5px; text-transform:uppercase; color:var(--texto-fraco);">
+        Dispensas específicas (crédito por equivalência)</h4>`;
+    for (const disp of p.dispensas_especificas) {
+      const dd = disp.disciplina_dispensada || {};
+      html += `<p style="font-size:13px; margin:6px 0;"><b>${escapeHtml(dd.sigla)} — ${escapeHtml(dd.nome)}</b>, dispensada via:</p>
+        <table><thead><tr><th>Equivalente</th><th>Unidade</th><th>Créditos</th><th>Nota</th><th>Período</th></tr></thead><tbody>`;
+      for (const eq of disp.equivalentes || []) {
+        html += `<tr><td>${escapeHtml(eq.nome)}</td><td>${escapeHtml(eq.unidade) || '—'}</td>
+          <td>${eq.creditos_aula}+${eq.creditos_trabalho}</td><td>${eq.nota}</td><td>${escapeHtml(eq.periodo)}</td></tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    html += '</div>';
+  }
+
+  html += `
+    <table>
+      <thead><tr>
+        <th></th><th>Semestre</th><th>Sigla</th><th>Nome</th><th>Créditos (aula)</th>
+        <th>Nota (histórico)</th><th>Situação</th><th>Itens de nota (Moodle)</th>
+      </tr></thead>
+      <tbody>
+  `;
+  disciplinas.forEach((disc, i) => {
+    const nome = disc.disciplina?.nome_pt || disc.moodle_nome || '—';
+    const sigla = disc.sigla_tentada || disc.disciplina?.sigla || '—';
+    const creditos = disc.disciplina?.creditos_aula ?? '—';
+    const hist = (disc.historico && disc.historico[0]) || {};
+    const semestre = hist.ano ? `${hist.ano}/${(hist.periodo || '').replace('º','')}` : '—';
+    html += `<tr class="linha-disciplina" data-idx="${i}">
+      <td class="seta">▸</td><td>${semestre}</td>
+      <td>${escapeHtml(sigla)}</td><td>${escapeHtml(nome)}</td><td>${creditos}</td>
+      <td>${hist.nota ?? '—'}</td><td>${escapeHtml(hist.situacao) || '—'}</td>
+      <td>${(disc.notas || []).length}</td>
+    </tr>
+    <tr class="linha-detalhe" data-idx="${i}" style="display:none;">
+      <td colspan="8"></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  bloco.innerHTML = html;
+
+  $$('.linha-disciplina', bloco).forEach(tr => {
+    tr.addEventListener('click', () => {
+      const idx = tr.dataset.idx;
+      const linhaDetalhe = bloco.querySelector(`.linha-detalhe[data-idx="${idx}"]`);
+      const celula = linhaDetalhe.querySelector('td');
+      const aberto = linhaDetalhe.style.display !== 'none';
+      if (aberto) {
+        linhaDetalhe.style.display = 'none';
+        tr.querySelector('.seta').textContent = '▸';
+      } else {
+        if (!celula.dataset.montado) {
+          celula.innerHTML = detalheDisciplinaHTML(disciplinas[idx]);
+          celula.dataset.montado = '1';
+        }
+        linhaDetalhe.style.display = 'table-row';
+        tr.querySelector('.seta').textContent = '▾';
+      }
+    });
+  });
+}
+
+async function carregarGithub() {
+  const bloco = $('#blocoGithub');
+  const d = await fetch('/api/dados/github').then(r => r.json());
+  if (d.disponivel === false) {
+    bloco.innerHTML = '<p class="vazio">Ainda não coletado. Rode "GitHub — coletar" na aba Coletores.</p>';
+    return;
+  }
+  const p = d.perfil || {};
+  const repos = d.repositorios || [];
+  let html = `
+    <div class="cartao" style="margin-bottom:14px;">
+      <h3>${p.nome || p.login || '—'}</h3>
+      <p class="desc">${p.bio || ''}</p>
+    </div>
+    <table>
+      <thead><tr><th>Repositório</th><th>Linguagem</th><th>★</th><th>Descrição</th></tr></thead>
+      <tbody>
+  `;
+  for (const r of repos) {
+    html += `<tr>
+      <td><a href="${r.url}" target="_blank" style="color:var(--azul);">${r.nome}</a></td>
+      <td>${r.linguagem_principal || '—'}</td>
+      <td>${r.estrelas ?? 0}</td>
+      <td>${r.descricao || ''}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  bloco.innerHTML = html;
+}
+
+// --- Timeline ---
+
+// escala sequencial (1 hue, claro->escuro), validada com
+// scripts/validate_palette.js --mode dark --surface #0f1420 --ordinal
+// (ALL CHECKS PASS: monotonia, gap adjacente, contraste do extremo claro).
+// baixo -> alto: nota < 5, 5-7, 7-8, 8-9, 9-10.
+const ESCALA_NOTA = ['#184f95', '#256abf', '#3987e5', '#6da7ec', '#b7d3f6'];
+
+function corPorNota(nota) {
+  if (nota == null) return null;
+  if (nota < 5) return ESCALA_NOTA[0];
+  if (nota < 7) return ESCALA_NOTA[1];
+  if (nota < 8) return ESCALA_NOTA[2];
+  if (nota < 9) return ESCALA_NOTA[3];
+  return ESCALA_NOTA[4];
+}
+
+// situação -> status (palette fixa, nunca temática — ver skill de dataviz)
+function statusPorSituacao(situacao) {
+  if (['A', 'DI', 'DS', 'AE'].includes(situacao)) return 'good';
+  if (['RN', 'RA', 'RF'].includes(situacao)) return 'critical';
+  if (situacao === 'T') return 'warning';
+  return 'neutro'; // MA, I, IR, IT, IP, P, IL — em andamento/pendente
+}
+
+function labelSemestre(sem) {
+  return `${String(sem.ano).slice(2)}/${(sem.periodo || '').replace('º', '')}`;
+}
+
+function renderEscalaLegenda() {
+  const barras = ESCALA_NOTA.map(c => `<span style="background:${c};"></span>`).join('');
+  return `<div class="escala-legenda">
+    <span>Escala da média:</span>
+    <div class="barra">${barras}</div>
+    <span>0 → 10</span>
+  </div>`;
+}
+
+function renderSparkline(semestresComMedia) {
+  const container = $('#sparklineMedia');
+  if (semestresComMedia.length < 2) {
+    container.innerHTML = renderEscalaLegenda() +
+      '<p class="vazio">Poucos semestres com média pra montar um gráfico (precisa de pelo menos 2).</p>';
+    return;
+  }
+
+  const W = 800, H = 150, padL = 32, padR = 15, padT = 15, padB = 26;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const n = semestresComMedia.length;
+  const x = i => padL + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const y = v => padT + (1 - v / 10) * innerH;
+
+  const pontos = semestresComMedia.map((sem, i) => ({
+    x: x(i), y: y(sem.media_ponderada_semestre), sem, i,
+  }));
+  const linhaPontos = pontos.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+
+  let svg = `<div class="spark-wrap">
+    <svg class="spark-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`;
+  // grid + eixo Y (0, 5, 10)
+  for (const v of [0, 5, 10]) {
+    svg += `<line class="spark-grid" x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}"></line>
+      <text class="spark-eixo-label" x="2" y="${y(v) + 3}">${v}</text>`;
+  }
+  svg += `<polyline class="spark-linha" points="${linhaPontos}"></polyline>`;
+  for (const p of pontos) {
+    svg += `<text class="spark-eixo-label" x="${p.x}" y="${H - 6}" text-anchor="middle">${escapeHtml(labelSemestre(p.sem))}</text>
+      <circle class="spark-ponto" cx="${p.x}" cy="${p.y}" r="4"></circle>`;
+  }
+  svg += `<line class="spark-crosshair" id="sparkCrosshair" x1="0" x2="0" y1="${padT}" y2="${H - padB}"></line>`;
+  for (const p of pontos) {
+    svg += `<circle class="spark-hit" data-idx="${p.i}" cx="${p.x}" cy="${p.y}" r="14"></circle>`;
+  }
+  svg += `</svg><div class="spark-tooltip" id="sparkTooltip"></div></div>`;
+
+  container.innerHTML = renderEscalaLegenda() + svg;
+
+  const svgEl = $('.spark-svg', container);
+  const crosshair = $('#sparkCrosshair', container);
+  const tooltip = $('#sparkTooltip', container);
+
+  function mostrar(p) {
+    crosshair.setAttribute('x1', p.x); crosshair.setAttribute('x2', p.x);
+    crosshair.style.opacity = '1';
+    tooltip.style.opacity = '1';
+    tooltip.style.left = (p.x / W * 100) + '%';
+    tooltip.style.top = (p.y / H * 100) + '%';
+    tooltip.innerHTML = `<div class="rotulo">${escapeHtml(labelSemestre(p.sem))}</div>
+      <div class="valor">${p.sem.media_ponderada_semestre.toFixed(1)}</div>`;
+  }
+  function esconder() {
+    crosshair.style.opacity = '0';
+    tooltip.style.opacity = '0';
+  }
+  $$('.spark-hit', svgEl).forEach(circ => {
+    const p = pontos[+circ.dataset.idx];
+    circ.addEventListener('pointerenter', () => mostrar(p));
+    circ.addEventListener('focus', () => mostrar(p));
+  });
+  svgEl.addEventListener('pointerleave', esconder);
+}
+
+function timelineItemHTML(sem) {
+  const isIntercambio = sem.tipo === 'Anual' && (!sem.disciplinas || !sem.disciplinas.length);
+  const emAndamento = sem.media_ponderada_semestre == null && !isIntercambio;
+  const cor = isIntercambio ? '#9085e9' : (emAndamento ? 'var(--texto-fraco)' : corPorNota(sem.media_ponderada_semestre));
+
+  let corpo;
+  if (isIntercambio) {
+    const obs = (sem.observacoes || []).join(' · ');
+    corpo = `<p class="desc" style="margin:0;">Intercâmbio de graduação — ${escapeHtml(obs)}</p>`;
+  } else {
+    const chips = (sem.disciplinas || []).map(d => {
+      const st = statusPorSituacao(d.situacao);
+      const nota = d.nota != null ? ` (${d.nota})` : '';
+      return `<span class="chip"><span class="bolinha status-${st}"></span>${escapeHtml(d.sigla)}${nota}</span>`;
+    }).join('');
+    const creditos = sem.creditos_aula_semestre != null
+      ? `${sem.creditos_aula_semestre} crédito(s) aula` + (sem.creditos_trabalho_semestre ? ` + ${sem.creditos_trabalho_semestre} trabalho` : '')
+      : '';
+    corpo = `<p class="desc" style="margin:0 0 4px;">${creditos}</p><div class="chips">${chips}</div>`;
+  }
+
+  const mediaTxt = emAndamento
+    ? 'em andamento'
+    : (isIntercambio ? '' : `média ${sem.media_ponderada_semestre?.toFixed(1) ?? '—'}`);
+
+  return `<div class="timeline-item">
+    <div class="timeline-dot" style="background:${cor};"></div>
+    <div class="cartao">
+      <h3>${escapeHtml(labelSemestre(sem))}<span class="media-valor">${mediaTxt}</span></h3>
+      ${corpo}
+    </div>
+  </div>`;
+}
+
+async function carregarTimeline() {
+  const d = await fetch('/api/dados/trajetoria').then(r => r.json());
+  const listaEl = $('#listaTimeline');
+  const sparkEl = $('#sparklineMedia');
+  if (d.disponivel === false) {
+    sparkEl.innerHTML = '';
+    listaEl.innerHTML = '<p class="vazio">Ainda não coletado. Rode "Consolidar" e "Histórico — processar PDF" na aba Coletores.</p>';
+    return;
+  }
+  const semestres = (d.perfil && d.perfil.semestres) || [];
+  if (!semestres.length) {
+    sparkEl.innerHTML = '';
+    listaEl.innerHTML = '<p class="vazio">Nenhum semestre encontrado no histórico.</p>';
+    return;
+  }
+
+  const comMedia = semestres.filter(s => s.media_ponderada_semestre != null);
+  renderSparkline(comMedia);
+
+  listaEl.innerHTML = `<div class="timeline">${semestres.map(timelineItemHTML).join('')}</div>`;
+}
+
+montarTarefas();
+carregarStatusAnthropicKey();
+</script>
+
+</body>
+</html>
