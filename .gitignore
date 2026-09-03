@@ -9,3 +9,5 @@ __pycache__/
 .env
 token.txt
 .claude/
+_debug_estado_*.png
+indice_semantico/

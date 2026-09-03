@@ -187,7 +187,13 @@ def esperar_login(context, page, timeout=300):
     if sys.stdin.isatty():
         print("Passaram-se 5 min sem detectar login. Se você já logou, tecle Enter "
               "pra tentar seguir mesmo assim (ou Ctrl+C pra abortar).")
-        input()
+        try:
+            input()
+        except EOFError:
+            # isatty() pode dar falso positivo em execução em background (ex.: task
+            # em segundo plano deste ambiente) — sem stdin real pra ler, seguir em
+            # vez de travar/quebrar, igual ao ramo não-interativo abaixo.
+            print("(stdin não respondeu — seguindo sem esperar Enter.)")
     else:
         # stdin não interativo (ex.: rodando em background) — input() aqui
         # travaria pra sempre. Só segue com o que tiver.
@@ -220,8 +226,30 @@ def listar_disciplinas(page):
 def extrair_pluginfiles(conteudo_html):
     urls = set()
     for u in PLUGINFILE_RE.findall(conteudo_html):
-        urls.add(html.unescape(u))
+        u = html.unescape(u)
+        # /pluginfile.php/1/core_admin/... é a logo do tema/site (contexto id 1
+        # = site inteiro), não material de curso — aparece em TODA página
+        # (inclusive dentro de cada página intermediária de pasta), então sem
+        # esse filtro ela é "baixada" de novo em cada disciplina/pasta visitada.
+        # Confirmado contra dados reais: 30 de 248 arquivos numa disciplina só.
+        if "/pluginfile.php/1/core_admin/" in u:
+            continue
+        urls.add(u)
     return urls
+
+
+def _corrigir_mojibake(s):
+    """Cabeçalhos HTTP são oficialmente latin-1; quando o Moodle manda um
+    nome de arquivo acentuado em UTF-8 cru (sem o formato filename*=UTF-8''
+    do RFC 5987), o bytes UTF-8 chega decodificado como latin-1 (mojibake
+    tipo 'EquaÃ§Ã£o.pdf' em vez de 'Equação.pdf'). Confirmado em disco contra
+    materiais reais baixados, não é exibição de terminal. Reencode/decode
+    recupera o texto certo; se a string já estiver correta (não é mojibake),
+    o round-trip falha e devolve o original sem alterar."""
+    try:
+        return s.encode("latin-1").decode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return s
 
 
 def nome_de_url(file_url, resp_headers=None):
@@ -230,11 +258,11 @@ def nome_de_url(file_url, resp_headers=None):
         cd = resp_headers.get("content-disposition", "")
         m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^"\r\n;]+)"?', cd)
         if m:
-            return sanitize(urllib.parse.unquote(m.group(1)))
+            return sanitize(_corrigir_mojibake(urllib.parse.unquote(m.group(1))))
     # senão, último segmento do path da URL
     path = urllib.parse.urlparse(file_url).path
     seg = urllib.parse.unquote(path.rstrip("/").split("/")[-1])
-    return sanitize(seg)
+    return sanitize(_corrigir_mojibake(seg))
 
 
 def baixar(context, file_url, destino_dir, manifesto, disciplina, origem):
@@ -283,7 +311,11 @@ def baixar(context, file_url, destino_dir, manifesto, disciplina, origem):
 def coletar_disciplina(context, page, disc, saida, manifesto):
     print(f"\n[disciplina] {disc['nome'] or disc['id']}")
     goto_seguro(page, disc["url"])
-    time.sleep(0.8)
+    # 2s (mesma espera usada em listar_disciplinas pros cards do dashboard):
+    # confirmado contra dado real que 0.8s falha ocasionalmente logo após
+    # "sessão reaproveitada" (JS da página do curso ainda não tinha renderizado
+    # os links de recurso/pasta — a extração achou 0 material nessa hora).
+    time.sleep(2)
     conteudo = page.content()
 
     destino = Path(saida) / sanitize(disc["nome"] or f"curso_{disc['id']}")

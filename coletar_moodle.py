@@ -7,8 +7,12 @@ como subprocesso, deixando a saída de cada um passar direto pro log de quem
 chamou este script.
 
 Não inclui download de materiais/arquivos (harvester_moodle.py sem
---list-only) — esse passo ainda não foi validado contra o tema da USP (ver
-CLAUDE.md) e pode ser lento; fica de fora do "coletar tudo" por enquanto.
+--list-only) — esse passo já está validado (ver CLAUDE.md), mas baixa muito
+arquivo (1.237 nas 40 disciplinas reais) e demora bastante; não é sempre
+necessário, então fica de fora do "coletar tudo" por padrão. Rode
+`harvester_moodle.py` direto (sem `--list-only`) quando quiser os materiais
+de fato — é pré-requisito de `extrair_texto_materiais.py`/
+`indexar_materiais.py` (currículo interativo).
 
 --- USO ---
     python3 coletar_moodle.py

@@ -5,6 +5,10 @@ acadêmica + GitHub + informações adicionais em texto livre) num currículo
 estruturado, via LLM (API da Claude, chamada HTTP direta — sem SDK, mesmo
 padrão stdlib-only de coletar_github.py/jupiter_disciplinas.py).
 
+Provider é escolhível (Claude por padrão, ou um modelo aberto local via
+Ollama pra teste sem custo/chave de API) — ver "SETUP" e "USO" abaixo. Em
+ambos os casos a chamada continua HTTP puro via urllib, sem SDK novo.
+
 Regra inegociável: o modelo só pode preencher com fatos que aparecem nos
 dados de entrada. Se não há experiência profissional real (comum pra quem
 ainda está na graduação), a seção sai vazia — nunca inventada. Cada bullet de
@@ -15,11 +19,23 @@ Não gera o .tex — isso é renderizar_curriculo.py, sem chamada de rede. Este
 script só produz o JSON estruturado intermediário.
 
 --- SETUP ---
-    .env na raiz do projeto:
+    .env na raiz do projeto (só necessário pro provider "claude"):
         ANTHROPIC_API_KEY=sk-ant-...
 
+    Provider "ollama" (teste local, sem custo): instalar
+    https://ollama.com, rodar `ollama pull llama3.1` (ou outro modelo) e
+    deixar `ollama serve` rodando (padrão: http://localhost:11434).
+    Modelos pequenos seguem a regra de "não inventar fatos" e o formato
+    JSON com bem menos confiabilidade que a Claude — serve pra validar o
+    pipeline, não pra qualidade final do texto.
+
 --- USO ---
-    python3 gerar_competencias.py
+    python3 gerar_competencias.py                       # Claude (padrão)
+    python3 gerar_competencias.py --provider ollama      # LLM local
+    python3 gerar_competencias.py --provider ollama --model qwen2.5:14b
+
+    Também dá pra fixar o padrão no .env: LLM_PROVIDER=ollama
+    (--provider na linha de comando tem prioridade sobre o .env).
 
 Entrada (todas opcionais, mas precisa de pelo menos uma):
     materiais_moodle/trajetoria_academica.json
@@ -29,6 +45,7 @@ Entrada (todas opcionais, mas precisa de pelo menos uma):
 Saída: dados_extra/competencias.json
 """
 
+import argparse
 import json
 import sys
 import time
@@ -42,9 +59,12 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     sys.stderr.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 
-API_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
-MODEL = "claude-opus-5"
+ANTHROPIC_MODEL_PADRAO = "claude-opus-5"
+
+OLLAMA_API_URL = "http://localhost:11434/api/chat"
+OLLAMA_MODEL_PADRAO = "llama3.1"
 
 ESQUEMA_COMPETENCIAS = {
     "type": "object",
@@ -225,19 +245,23 @@ def montar_mensagem_usuario(trajetoria, github, texto_extra):
     return "\n".join(partes)
 
 
-def chamar_claude(system_text, user_content, api_key):
+def chamar_claude(system_text, user_content, api_key, model, formato):
+    """formato: schema JSON pra structured output, ou None pra texto livre
+    (reusado por busca_semantica.py, que quer prosa citando fonte, não um
+    schema fixo como o do currículo)."""
     corpo = {
-        "model": MODEL,
+        "model": model,
         "max_tokens": 16000,
         "system": [{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": user_content}],
-        "output_config": {
-            "effort": "high",
-            "format": {"type": "json_schema", "schema": ESQUEMA_COMPETENCIAS},
-        },
     }
+    if formato is not None:
+        corpo["output_config"] = {
+            "effort": "high",
+            "format": {"type": "json_schema", "schema": formato},
+        }
     req = urllib.request.Request(
-        API_URL,
+        ANTHROPIC_API_URL,
         data=json.dumps(corpo).encode("utf-8"),
         headers={
             "x-api-key": api_key,
@@ -262,16 +286,75 @@ def chamar_claude(system_text, user_content, api_key):
     bloco_texto = next((b["text"] for b in resposta.get("content", []) if b.get("type") == "text"), None)
     if bloco_texto is None:
         raise RuntimeError(f"Resposta sem bloco de texto: {resposta}")
-    return json.loads(bloco_texto)
+    return json.loads(bloco_texto) if formato is not None else bloco_texto
+
+
+def chamar_ollama(system_text, user_content, model, formato):
+    """formato: ver docstring de chamar_claude."""
+    corpo = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": user_content},
+        ],
+        "stream": False,
+    }
+    if formato is not None:
+        corpo["format"] = formato
+    req = urllib.request.Request(
+        OLLAMA_API_URL,
+        data=json.dumps(corpo).encode("utf-8"),
+        headers={"content-type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=600) as resp:
+            resposta = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.URLError as e:
+        print(f"Não consegui falar com o Ollama em {OLLAMA_API_URL} — "
+              f"confirme que `ollama serve` está rodando e que o modelo "
+              f"'{model}' foi baixado (`ollama pull {model}`).", file=sys.stderr)
+        raise RuntimeError(f"Falha de conexão com Ollama: {e}") from e
+
+    conteudo = resposta.get("message", {}).get("content")
+    if not conteudo:
+        raise RuntimeError(f"Resposta do Ollama sem conteúdo: {resposta}")
+    if formato is None:
+        return conteudo
+    try:
+        return json.loads(conteudo)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"O modelo '{model}' não devolveu JSON válido pro schema pedido "
+            f"(comum em modelos abertos menores). Resposta bruta: {conteudo[:2000]}"
+        ) from e
 
 
 def main():
     env = carregar_env()
-    api_key = env.get("ANTHROPIC_API_KEY") or ""
-    if not api_key:
-        print("Falta ANTHROPIC_API_KEY no .env. Veja o cabeçalho deste script "
-              "pro formato esperado.", file=sys.stderr)
-        sys.exit(1)
+
+    parser = argparse.ArgumentParser(description="Gera competências estruturadas via LLM.")
+    parser.add_argument(
+        "--provider", choices=["claude", "ollama"],
+        default=env.get("LLM_PROVIDER") or "claude",
+        help="Provider do LLM (padrão: claude; ou LLM_PROVIDER no .env).",
+    )
+    parser.add_argument(
+        "--model", default=None,
+        help="Nome do modelo (padrão: claude-opus-5 pro provider claude, "
+             "llama3.1 pro provider ollama).",
+    )
+    args = parser.parse_args()
+
+    if args.provider == "claude":
+        api_key = env.get("ANTHROPIC_API_KEY") or ""
+        if not api_key:
+            print("Falta ANTHROPIC_API_KEY no .env. Veja o cabeçalho deste script "
+                  "pro formato esperado.", file=sys.stderr)
+            sys.exit(1)
+        model = args.model or ANTHROPIC_MODEL_PADRAO
+    else:
+        model = args.model or OLLAMA_MODEL_PADRAO
 
     trajetoria = ler_json_seguro("materiais_moodle/trajetoria_academica.json")
     github = ler_json_seguro("dados_github/github.json")
@@ -289,10 +372,13 @@ def main():
 
     mensagem = montar_mensagem_usuario(trajetoria, github, texto_extra)
 
-    print(f"Chamando a API da Claude ({MODEL})... pode demorar um pouco "
-          f"(entrada grande + raciocínio).")
+    print(f"Chamando o provider '{args.provider}' ({model})... pode demorar "
+          f"um pouco (entrada grande + raciocínio).")
     inicio = time.time()
-    competencias = chamar_claude(SYSTEM_PROMPT, mensagem, api_key)
+    if args.provider == "claude":
+        competencias = chamar_claude(SYSTEM_PROMPT, mensagem, api_key, model, ESQUEMA_COMPETENCIAS)
+    else:
+        competencias = chamar_ollama(SYSTEM_PROMPT, mensagem, model, ESQUEMA_COMPETENCIAS)
     print(f"Resposta recebida em {time.time() - inicio:.1f}s.")
 
     out_dir = Path("dados_extra")

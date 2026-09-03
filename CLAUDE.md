@@ -298,6 +298,44 @@ detecção/banimento — ver `coletar_github.py`.
   (ex.: Experiência Profissional pra quem não tem nenhuma ainda) é omitida
   inteira, nunca aparece em branco. Não compila o PDF sozinho — usuário
   compila com `pdflatex`/Overleaf.
+- **`extrair_texto_materiais.py`** — FOCO ATUAL, passo 1 do "currículo
+  interativo" (RAG — ver `IDEIA_curriculo_interativo.md`). Sem chamada de
+  rede: lê `materiais_moodle/manifesto.json`, extrai texto de cada arquivo
+  suportado (PDF via `pdfplumber`, código/texto puro via leitura direta,
+  `.ipynb` via parse do JSON de células) e quebra em chunks com proveniência
+  (disciplina/arquivo/origem_url herdados do manifesto). Escopo v1
+  deliberadamente restrito a PDF + código/texto (~84% dos arquivos, zero
+  dependência nova) — pptx/docx/zip ficam de fora por enquanto, registrados
+  (não perdidos) em `indice_semantico/nao_indexados.json` com o motivo. Gera
+  `indice_semantico/chunks.jsonl`.
+- **`gerar_embeddings.py`** — passo 2. Chamada de rede (Ollama local, HTTP
+  puro via `urllib`, mesmo padrão de `chamar_ollama()` em
+  `gerar_competencias.py` — sem SDK novo): lê `indice_semantico/chunks.jsonl`
+  e gera um vetor por chunk via `nomic-embed-text` (`ollama pull
+  nomic-embed-text`). Decisão consciente: embeddings via Ollama local, não
+  Voyage AI (que seria a primeira dependência de API paga além de
+  Claude/GitHub) — mesma filosofia de dependência mínima do projeto. Gera
+  `indice_semantico/embeddings.npy` (array N x dim, linha i = embedding do
+  chunk i do jsonl).
+- **`indexar_materiais.py`** — orquestrador (mesmo padrão de
+  `gerar_curriculo_completo.py`): chama `extrair_texto_materiais.py` +
+  `gerar_embeddings.py` em sequência. Botão "Currículo interativo — indexar
+  materiais" no painel.
+- **`busca_semantica.py`** — módulo compartilhado do currículo interativo,
+  **importado direto por `app.py`** (não é subprocess como os outros —
+  precisa responder rápido a cada pergunta, então o índice fica cacheado em
+  memória entre requisições). `buscar()` faz similaridade de cosseno por
+  força bruta em numpy contra `embeddings.npy`; `responder()` complementa os
+  chunks recuperados com dado ESTRUTURADO (nota/situação/período) de
+  `trajetoria_academica.json` pras disciplinas envolvidas (dado que já é
+  estruturado não precisa de embedding — ver "Perguntas em aberto" em
+  `IDEIA_curriculo_interativo.md`), chama Claude ou Ollama (reusa
+  `chamar_claude`/`chamar_ollama` de `gerar_competencias.py`, que agora
+  aceitam um parâmetro `formato` — `None` pra texto livre, o schema JSON de
+  sempre pro currículo) e devolve resposta + fontes. **As fontes citadas vêm
+  direto dos chunks recuperados na busca, nunca de texto que o LLM escreveu**
+  — evita citação inventada pelo modelo, mesmo com um provider menos
+  confiável tipo um Ollama pequeno.
 - **`sonda_moodle.py`** — prova de viabilidade da API (já demonstrou que o SSO
   bloqueia o token). Mantido como registro; não é parte do produto final.
 - *(Se houver `garimpo_github.py` na pasta: é de outro experimento, NÃO relacionado
@@ -308,11 +346,15 @@ detecção/banimento — ver `coletar_github.py`.
 - **Windows + PowerShell.**
 - Virtualenv em `.venv` (ativar: `.\.venv\Scripts\Activate.ps1`; se der erro de
   execution policy: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`).
-- Dependências: `playwright` + `pdfplumber` + `flask` (pip) + navegador via
-  `playwright install chromium` (o navegador fica no cache do usuário, fora
-  da venv).
+- Dependências: `playwright` + `pdfplumber` + `flask` + `numpy` (pip) +
+  navegador via `playwright install chromium` (o navegador fica no cache do
+  usuário, fora da venv). `numpy` é só pro currículo interativo (similaridade
+  de cosseno em memória, ver `busca_semantica.py`) — único jeito razoável de
+  fazer essa conta sem reinventar álgebra linear em Python puro.
+- Currículo interativo também precisa do Ollama local rodando com o modelo
+  de embedding baixado: `ollama pull nomic-embed-text`.
 - `.gitignore` deve conter: `.venv/`, `.perfil_navegador/`, `materiais_moodle/`,
-  `dados_github/`, `dados_linkedin/`, `dados_extra/`, `.env`.
+  `dados_github/`, `dados_linkedin/`, `dados_extra/`, `indice_semantico/`, `.env`.
 - **Credenciais de API (ex.: `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`) vão em
   `.env` na raiz, nunca no código.** Formato `CHAVE=valor`, uma por linha;
   `carregar_env()` em `coletar_github.py` faz o parse (sem dependência nova
@@ -411,6 +453,72 @@ detecção/banimento — ver `coletar_github.py`.
   quebras que importam (`<br>`, `</tr>`) com um token único ANTES de colapsar
   todo o resto do whitespace (inclusive as quebras cosméticas) em espaço
   simples, só depois dividir pelo token.
+- **CONFIRMADO em 2026-09-01, validando o download completo do Moodle
+  (`harvester_moodle.py`) contra PME3230-TEORIA/2023 (id 112739):**
+  - **Nome de arquivo com acentuação vem em mojibake** (ex.:
+    `EquaÃ§Ã£o.pdf` em vez de `Equação.pdf`) — corrupção real em disco, não
+    exibição de terminal (confirmado com `ls` direto na pasta baixada).
+    Causa: o Moodle manda `Content-Disposition: filename="Equação.pdf"` com
+    bytes UTF-8 crus (sem o formato `filename*=UTF-8''...` do RFC 5987, que
+    aí sim seria percent-encoded e decodificaria certo); como cabeçalho HTTP
+    é oficialmente latin-1, cada par de bytes UTF-8 vira dois caracteres
+    latin-1 errados. Fix em `nome_de_url()`: `_corrigir_mojibake()` faz
+    `s.encode("latin-1").decode("utf-8")` com fallback pro original se isso
+    falhar (string já correta não sofre o round-trip, o encode/decode dá
+    erro e é ignorado).
+  - **A logo do site (`/pluginfile.php/1/core_admin/logocompact/...`) era
+    baixada repetidas vezes como se fosse material de curso** — ela aparece
+    em toda página do Moodle (inclusive nas páginas intermediárias de cada
+    pasta), então o regex genérico de `pluginfile.php` pegava ela de novo a
+    cada pasta visitada: 30 de 248 arquivos numa disciplina só antes do fix.
+    `extrair_pluginfiles()` agora ignora qualquer URL com
+    `/pluginfile.php/1/core_admin/` (contexto id 1 = site inteiro, não
+    curso).
+  - **`sys.stdin.isatty()` pode dar falso positivo em execução em
+    background** (confirmado neste ambiente de agente): o script entrava no
+    ramo "pergunta e espera Enter" do timeout de login mesmo sem stdin real
+    pra ler, e quebrava com `EOFError` não tratado em vez de seguir. Fix:
+    `try/except EOFError` ao redor do `input()`, mesma lógica de fallback do
+    ramo não-interativo.
+  - **0.8s de espera após navegar pra página do curso, ocasionalmente,
+    não é suficiente** pro JS renderizar os links de recurso/pasta —
+    aconteceu 1 vez em 4 rodadas de teste, sempre logo após "sessão
+    reaproveitada" (não custou nada aumentar pra 2s, mesma ordem de grandeza
+    já usada em `listar_disciplinas` pros cards do dashboard).
+- **CONFIRMADO em 2026-09-02/03, indexando os materiais reais pro currículo
+  interativo (`extrair_texto_materiais.py` + `gerar_embeddings.py`):**
+  - **Um PDF anexado como material de apoio pode ser um handbook/livro-texto
+    inteiro** (ex.: volumes do "ASM Metals Handbook", 49-62MB cada, com
+    diagramas vetoriais de metalurgia densos) — `pdfplumber.extract_text()`
+    página a página fica **exponencialmente** mais lento nesses casos: um de
+    62MB levou ~29min, outro de 49MB passou de **3 HORAS** sem terminar
+    (memória subindo até quase 4GB) antes de eu matar o processo — tamanho
+    de arquivo não prediz tempo de forma confiável quando o conteúdo é
+    vetorial/complexo, não só texto. Fix: `TAMANHO_MAX_PDF_BYTES` (10MB) em
+    `extrair_texto_materiais.py` pula o arquivo ANTES de abrir com
+    pdfplumber — nunca paga esse custo. O limite por contagem de chunks
+    (`LIMITE_CHUNKS_POR_ARQUIVO`, 150) continua existindo como segunda
+    camada, mas só filtra o RESULTADO — não evita o custo de abrir o PDF, é
+    o limite de tamanho que faz isso.
+  - **Ollama: uma chamada de embedding por chunk (`/api/embeddings`, 1
+    texto) tem overhead fixo alto** (~3.5s por chamada nesta máquina, CPU
+    only, mesmo pra um prompt de teste de poucas palavras) — pra 10 mil
+    chunks, ~10h. O endpoint mais novo `/api/embed` aceita lista de textos
+    em `"input"` num lote só; **lote de 50 caiu pra ~0.3-2s/item**
+    dependendo do tamanho real dos chunks (chunks de ~1000-1600 chars são
+    mais lentos que um teste curto, mas ainda assim uma fração do custo
+    sem lote). Sempre usar `/api/embed` em lote pra volume, nunca
+    `/api/embeddings` um por um.
+  - **Mesmo em lote, o processo de embeddings foi interrompido várias vezes**
+    nesta sessão (usuário precisando usar a máquina pra outra coisa, e uma
+    vez um timeout real de lote — `TimeoutError` puro do `urllib`, não
+    `URLError`, então o `except` original não pegava e o processo caía sem
+    tratamento). Fixes em `gerar_embeddings.py`: (1) checkpoint incremental
+    (`embeddings.parcial.npy`, salvo a cada lote, carregado e retomado no
+    início se existir e bater com o tamanho de `chunks.jsonl`); (2) retry
+    com backoff (3 tentativas, timeout de 300s por chamada, `except`
+    cobrindo `URLError`/`TimeoutError`/`OSError`). Sem isso, cada
+    interrupção custava recomeçar do zero.
 
 ## Status das fontes (o que já funciona, ponta a ponta, contra dados reais)
 
@@ -430,9 +538,19 @@ detecção/banimento — ver `coletar_github.py`.
   JSON só — `materiais_moodle/trajetoria_academica.json`. É este arquivo,
   não os arquivos brutos de cada coletor, que deve alimentar o próximo passo
   (ver "Arquitetura de dados" acima).
-- ⬜ Materiais/arquivos baixados (`harvester_moodle.py`, sem `--list-only`) —
-  implementado mas ainda não validado contra download completo real (pastas,
-  `pluginfile.php`).
+- ✅ **Materiais/arquivos baixados** (`harvester_moodle.py`, sem `--list-only`):
+  validado ponta a ponta em 2026-09-01, coleta completa nas 40 disciplinas
+  reais — **1.237 arquivos baixados**, 0 crash, 0 arquivo com nome quebrado,
+  0 logo duplicada, 4 disciplinas sem material (esperado — só têm
+  página/links, não arquivo pra baixar), 35 falhas individuais de download
+  (majoritariamente timeout de 30s em vídeo grande, cada uma logada e
+  ignorada sem derrubar a disciplina nem o resto da coleta — não investigado
+  se vale aumentar o timeout, não bloqueou nada até agora). Dois bugs reais
+  encontrados e corrigidos numa rodada de calibração antes dessa (disciplina
+  única, PME3230-TEORIA/2023): nomes de arquivo com acentuação quebrada
+  (mojibake) e a logo do site sendo baixada repetidas vezes como se fosse
+  material de curso — ver "Gotchas técnicos". `materiais_moodle/manifesto.json`
+  tem a proveniência de cada um dos 1.237 arquivos.
 - ✅ **GitHub** (`coletar_github.py`): perfil + 13 repositórios (linguagens,
   tópicos, README) via API oficial. `dados_github/github.json`.
 - ⬜ **LinkedIn**: decidido NÃO automatizar (ver seção própria acima) —
@@ -443,13 +561,28 @@ detecção/banimento — ver `coletar_github.py`.
   cobrindo escape de caracteres especiais e omissão de seção vazia) e
   integrado ao painel. **Ainda não validado ponta a ponta com uma chamada
   real à API** — falta `ANTHROPIC_API_KEY` no `.env`.
+- ✅ **Currículo interativo (RAG)** (`extrair_texto_materiais.py` +
+  `gerar_embeddings.py` + `indexar_materiais.py` + `busca_semantica.py`, ver
+  "Arquivos" e `IDEIA_curriculo_interativo.md`): validado ponta a ponta em
+  2026-09-03. Índice real: **10.662 chunks de 837 arquivos** (973 PDFs +
+  código/texto, 400 fora do escopo v1 — pptx/docx/zip/vídeo por decisão,
+  handbooks gigantes por tamanho, PDFs escaneados sem texto). Testado via
+  `POST /api/perguntar` de verdade (não só função direta): busca semântica
+  recuperou material certeiro pra pergunta de teste ("quais linguagens de
+  programação aparecem nos materiais do aluno?" → código G de CNC, Python,
+  linguagens formais/ANTLR, programação de CLP — citação disciplina/arquivo/
+  score correta em todas). Ressalva confirmada: `llama3.2:1b` (rápido, só
+  usado pra validar a pipeline) não sintetiza resposta de verdade, só ecoa
+  os trechos — qualidade de resposta real precisa de Claude (falta
+  `ANTHROPIC_API_KEY`) ou de um modelo Ollama maior com paciência (ex.
+  `mistral:7b-instruct`, ~10min/pergunta nesta máquina sem GPU). Gotchas de
+  performance da indexação (handbook gigante travando 3h+, retry/checkpoint
+  de embeddings) registrados na seção própria abaixo.
 
 ## Próximas tarefas (em ordem)
 
-1. **Validar o download completo do Moodle** (recursos `/mod/resource/`, pastas
-   `/mod/folder/`, e links `pluginfile.php`) no tema da USP; ajustar extração.
-   `dump_pagina_moodle.py` serve pra calibrar contra uma página de recurso real
-   antes de escrever/ajustar o parser, mesmo processo usado pra `moodle_notas.py`.
+1. ~~Validar o download completo do Moodle~~ — **feito em 2026-09-01**, coleta
+   completa das 40 disciplinas rodada com sucesso (ver "Status das fontes").
 2. **Explorar o resto do menu autenticado do Jupiter** ("Acesso Restrito":
    Grade horária, Acompanhamentos, Avaliação de disciplinas, Emissão de
    documentos, Opção de curso, Matrícula...) — o histórico escolar já está
@@ -466,8 +599,9 @@ detecção/banimento — ver `coletar_github.py`.
    Depois disso, `gerar_competencias.py` passa a ler também esse arquivo.
 5. **(Ideia futura, não iniciada) Currículo interativo:** busca semântica
    (RAG) sobre os materiais reais de cada disciplina, cruzada com desempenho
-   — ver `IDEIA_curriculo_interativo.md` pro desenho detalhado. Bloqueada
-   pela tarefa 1 (download completo de materiais ainda não validado).
+   — ver `IDEIA_curriculo_interativo.md` pro desenho detalhado. Bloqueio de
+   download resolvido (tarefa 1); falta a tarefa 3 (gerador de competências
+   validado ponta a ponta) antes de valer a pena começar.
 
 ## Como você (Claude Code) pode ajudar melhor
 

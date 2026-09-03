@@ -32,12 +32,16 @@ contexto), não só "sim/não":
 
 ## Pré-requisito bloqueante
 
-**Download completo de materiais do Moodle ainda não está validado** — hoje
-só `harvester_moodle.py --list-only` (a listagem de disciplinas) está
-confirmado contra dados reais. O download de fato (`/mod/resource/`,
-`/mod/folder/`, `pluginfile.php`) está implementado mas não testado — é a
-tarefa 1 do roadmap em `CLAUDE.md`. Essa ideia não pode começar antes disso;
-não adianta desenhar o índice de busca sem ter os arquivos.
+**Resolvido em 2026-09-01:** o download completo do Moodle
+(`/mod/resource/`, `/mod/folder/`, `pluginfile.php`) foi validado ponta a
+ponta contra as 40 disciplinas reais — 1.237 arquivos em
+`materiais_moodle/<disciplina>/`, com proveniência em
+`materiais_moodle/manifesto.json`. Dois bugs reais foram corrigidos no
+caminho (mojibake de nome de arquivo, logo do site sendo baixada como
+material — ver "Gotchas técnicos" em `CLAUDE.md`). Os arquivos já estão em
+mãos; o que falta antes de começar essa ideia de verdade é só o gerador de
+competências validado ponta a ponta (tarefa 3 do roadmap atual em
+`CLAUDE.md`).
 
 ## Arquitetura proposta (rascunho, a refinar quando for começar)
 
@@ -107,6 +111,6 @@ desenhar de verdade.
 
 ## Onde isso entra no roadmap
 
-Depois da tarefa 1 (download completo validado) e depois do gerador de
-competências estar validado ponta a ponta com uma chamada real — não é uma
-tarefa a paralelizar com o que já está em andamento agora.
+Coleta completa das 40 disciplinas: feita. Falta o gerador de competências
+validado ponta a ponta com uma chamada real — não é uma tarefa a
+paralelizar com o que já está em andamento agora.

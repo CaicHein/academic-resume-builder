@@ -264,6 +264,7 @@
   <button data-aba="extra">Informações adicionais</button>
   <button data-aba="visualizar">Visualizar dados</button>
   <button data-aba="timeline">Timeline</button>
+  <button data-aba="interativo">Currículo interativo</button>
 </nav>
 
 <main>
@@ -336,6 +337,39 @@
     <div id="listaTimeline"><p class="vazio">Carregando…</p></div>
   </section>
 
+  <section class="aba" id="aba-interativo">
+    <h2 class="titulo-secao">Currículo interativo</h2>
+    <p style="color:var(--texto-fraco); font-size:13px; max-width:640px; margin-bottom:14px;">
+      Busca semântica sobre o conteúdo real dos materiais de cada disciplina (não só a
+      ementa) — pergunte algo específico ("o aluno viu recursão em alguma disciplina?",
+      "como foi o desempenho em sistemas distribuídos?") e a resposta vem com as fontes
+      (disciplina + arquivo) de onde tirou cada trecho.
+    </p>
+
+    <div class="cartao" id="statusIndiceInterativo" style="margin-bottom:18px;">
+      <p class="vazio">Carregando status do índice…</p>
+    </div>
+
+    <div class="cartao">
+      <h3>Fazer uma pergunta</h3>
+      <textarea id="perguntaInterativo" placeholder="Escreva sua pergunta..."
+        style="width:100%; min-height:80px; background:var(--painel2); color:var(--texto);
+        border:1px solid var(--borda); border-radius:8px; padding:12px; font-family:inherit;
+        font-size:14px; resize:vertical; margin-bottom:10px;"></textarea>
+      <div class="linha-acao" style="margin-bottom:10px;">
+        <select id="providerInterativo" class="campo-texto" style="flex:0 0 150px; min-width:130px;">
+          <option value="claude">Claude (API)</option>
+          <option value="ollama">Ollama (local)</option>
+        </select>
+        <input type="text" id="modeloInterativo" class="campo-texto" placeholder="modelo (opcional)">
+        <button class="executar" id="botaoPerguntar">Perguntar</button>
+      </div>
+      <div id="statusPergunta" style="color:var(--texto-fraco); font-size:13px;"></div>
+    </div>
+
+    <div id="respostaInterativo"></div>
+  </section>
+
 </main>
 
 <script>
@@ -353,6 +387,7 @@ $$('nav.abas button').forEach(btn => {
     if (btn.dataset.aba === 'linkedin') carregarArquivosLinkedin();
     if (btn.dataset.aba === 'extra') carregarInfoExtra();
     if (btn.dataset.aba === 'timeline') carregarTimeline();
+    if (btn.dataset.aba === 'interativo') carregarStatusIndiceInterativo();
   });
 });
 
@@ -366,9 +401,19 @@ async function montarTarefas() {
   for (const [id, t] of Object.entries(tarefas)) {
     const cartao = document.createElement('div');
     cartao.className = 'cartao';
+    const seletorProvider = id === 'curriculo' ? `
+      <div class="linha-acao" style="margin-bottom:10px;">
+        <select id="curriculoProvider" class="campo-texto" style="flex:0 0 150px; min-width:130px;">
+          <option value="claude">Claude (API)</option>
+          <option value="ollama">Ollama (local)</option>
+        </select>
+        <input type="text" id="curriculoModelo" class="campo-texto" placeholder="modelo (opcional, ex.: qwen2.5:14b)">
+      </div>
+    ` : '';
     cartao.innerHTML = `
       <h3>${t.rotulo}</h3>
       <p class="desc">${t.descricao}</p>
+      ${seletorProvider}
       <div class="linha-acao">
         <button class="executar" data-id="${id}">Executar</button>
         <span class="selo" id="selo-${id}" style="display:none;"></span>
@@ -383,7 +428,14 @@ async function montarTarefas() {
 }
 
 async function executarTarefa(id) {
-  const resp = await fetch(`/api/executar/${id}`, { method: 'POST' });
+  const opcoes = { method: 'POST' };
+  if (id === 'curriculo') {
+    const provider = $('#curriculoProvider').value;
+    const model = $('#curriculoModelo').value.trim();
+    opcoes.headers = { 'Content-Type': 'application/json' };
+    opcoes.body = JSON.stringify({ provider, model });
+  }
+  const resp = await fetch(`/api/executar/${id}`, opcoes);
   const dado = await resp.json();
   if (resp.status === 409) {
     acompanharTarefa(id, dado.task_id);
@@ -915,6 +967,83 @@ async function carregarTimeline() {
 
   listaEl.innerHTML = `<div class="timeline">${semestres.map(timelineItemHTML).join('')}</div>`;
 }
+
+// --- Currículo interativo (RAG) ---
+async function carregarStatusIndiceInterativo() {
+  const bloco = $('#statusIndiceInterativo');
+  bloco.innerHTML = '<p class="vazio">Carregando status do índice…</p>';
+  const d = await fetch('/api/dados/indice-status').then(r => r.json());
+  if (!d.disponivel) {
+    bloco.innerHTML = `
+      <h3>Índice não gerado ainda</h3>
+      <p class="desc">
+        Rode "Currículo interativo — indexar materiais" na aba Coletores primeiro
+        (precisa dos materiais baixados — "Moodle" com download completo, e do
+        Ollama rodando com <code>nomic-embed-text</code> baixado).
+      </p>
+    `;
+    return;
+  }
+  const data = new Date(d.modificado_em * 1000).toLocaleString('pt-BR');
+  bloco.innerHTML = `
+    <h3>Índice disponível</h3>
+    <p class="desc">
+      ${d.n_chunks} trecho(s) indexado(s), cobrindo ${d.n_disciplinas} disciplina(s).
+      Gerado em ${data}.
+    </p>
+  `;
+}
+
+$('#botaoPerguntar').addEventListener('click', async () => {
+  const pergunta = $('#perguntaInterativo').value.trim();
+  const status = $('#statusPergunta');
+  const respostaEl = $('#respostaInterativo');
+  if (!pergunta) { status.textContent = 'Escreva uma pergunta primeiro.'; return; }
+
+  const provider = $('#providerInterativo').value;
+  const model = $('#modeloInterativo').value.trim();
+  status.textContent = 'Buscando e gerando resposta… pode demorar um pouco.';
+  respostaEl.innerHTML = '';
+  $('#botaoPerguntar').disabled = true;
+
+  try {
+    const r = await fetch('/api/perguntar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pergunta, provider, model }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      status.textContent = '';
+      respostaEl.innerHTML = `<p class="aviso-inline">${escapeHtml(d.erro || 'Erro desconhecido.')}</p>`;
+      return;
+    }
+    status.textContent = '';
+    const fontesHtml = (d.fontes || []).map(f => `
+      <li style="background:var(--painel2); border:1px solid var(--borda); border-radius:6px;
+        padding:8px 12px; margin-bottom:6px; font-size:13px;">
+        <b>${escapeHtml(f.disciplina)}</b> — ${escapeHtml(f.arquivo)}
+        ${f.origem_url ? `(<a href="${f.origem_url}" target="_blank" style="color:var(--azul);">abrir no Moodle</a>)` : ''}
+        <p style="color:var(--texto-fraco); font-size:12.5px; margin:4px 0 0;">${escapeHtml(f.trecho)}</p>
+      </li>
+    `).join('');
+    respostaEl.innerHTML = `
+      <div class="cartao" style="margin-top:14px;">
+        <h3>Resposta</h3>
+        <p style="white-space:pre-wrap; line-height:1.5;">${escapeHtml(d.resposta)}</p>
+      </div>
+      <div class="cartao" style="margin-top:14px;">
+        <h3>Fontes</h3>
+        <ul style="list-style:none; padding:0; margin:0;">${fontesHtml || '<p class="vazio">Nenhuma fonte recuperada.</p>'}</ul>
+      </div>
+    `;
+  } catch (e) {
+    status.textContent = '';
+    respostaEl.innerHTML = `<p class="aviso-inline">Falha de rede: ${escapeHtml(String(e))}</p>`;
+  } finally {
+    $('#botaoPerguntar').disabled = false;
+  }
+});
 
 montarTarefas();
 carregarStatusAnthropicKey();

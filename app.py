@@ -28,6 +28,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 
 from coletar_github import carregar_env
+import busca_semantica
 
 BASE_DIR = Path(__file__).parent
 PYTHON = sys.executable
@@ -60,7 +61,12 @@ TAREFAS = {
     "curriculo": {
         "rotulo": "Currículo — gerar (LLM + .tex)",
         "comando": [PYTHON, "gerar_curriculo_completo.py"],
-        "descricao": "Sintetiza competências via API da Claude e já monta o .tex. Precisa de ANTHROPIC_API_KEY (configura acima) e de pelo menos uma fonte coletada. Chamada paga.",
+        "descricao": "Sintetiza competências via LLM e já monta o .tex. Precisa de pelo menos uma fonte coletada. Provider \"Claude\" precisa de ANTHROPIC_API_KEY (configura acima) e é uma chamada paga; provider \"Ollama\" roda local e de graça, mas precisa do Ollama instalado e do modelo já baixado (`ollama pull <modelo>`), e é bem menos confiável seguindo a regra de não inventar dado — serve pra testar o pipeline.",
+    },
+    "indexar": {
+        "rotulo": "Currículo interativo — indexar materiais",
+        "comando": [PYTHON, "indexar_materiais.py"],
+        "descricao": "Extrai texto dos materiais baixados (PDF + código/texto, v1) e gera embeddings via Ollama local, pra habilitar a aba \"Currículo interativo\". Precisa de materiais_moodle/manifesto.json (rode \"Moodle\" com download completo, sem --list-only — ver harvester_moodle.py) e do Ollama rodando com `nomic-embed-text` baixado.",
     },
 }
 
@@ -113,6 +119,21 @@ def executar(script_id):
     if script_id not in TAREFAS:
         return jsonify({"erro": "tarefa desconhecida"}), 404
 
+    comando = list(TAREFAS[script_id]["comando"])
+    if script_id == "curriculo":
+        # única tarefa com opções: escolha de provider do LLM (Claude por
+        # padrão, ou Ollama local pra testar sem custo/chave — ver
+        # gerar_competencias.py). Repassado como argv pro orquestrador, que
+        # por sua vez repassa só pro passo de geração de competências.
+        corpo = request.get_json(silent=True) or {}
+        provider = (corpo.get("provider") or "claude").strip()
+        if provider not in ("claude", "ollama"):
+            return jsonify({"erro": "provider inválido"}), 400
+        comando += ["--provider", provider]
+        modelo = (corpo.get("model") or "").strip()
+        if modelo:
+            comando += ["--model", modelo]
+
     with _lock:
         em_andamento = [
             tid for tid, st in _tarefas_estado.items()
@@ -133,7 +154,7 @@ def executar(script_id):
         }
 
     thread = threading.Thread(
-        target=_rodar_em_thread, args=(task_id, TAREFAS[script_id]["comando"]), daemon=True
+        target=_rodar_em_thread, args=(task_id, comando), daemon=True
     )
     thread.start()
     return jsonify({"task_id": task_id})
@@ -195,7 +216,60 @@ def dados_status():
         "informacoes_adicionais": info("dados_extra/informacoes_adicionais.json"),
         "competencias": info("dados_extra/competencias.json"),
         "curriculo_tex": info("dados_extra/curriculo.tex"),
+        "indice_semantico": info("indice_semantico/embeddings.npy"),
     })
+
+
+@app.route("/api/dados/indice-status", methods=["GET"])
+def dados_indice_status():
+    chunks_path = BASE_DIR / "indice_semantico" / "chunks.jsonl"
+    embeddings_path = BASE_DIR / "indice_semantico" / "embeddings.npy"
+    if not chunks_path.exists() or not embeddings_path.exists():
+        return jsonify({"disponivel": False})
+
+    disciplinas = set()
+    n_chunks = 0
+    for linha in chunks_path.read_text(encoding="utf-8").splitlines():
+        n_chunks += 1
+        disciplinas.add(json.loads(linha)["disciplina"])
+
+    return jsonify({
+        "disponivel": True,
+        "n_chunks": n_chunks,
+        "n_disciplinas": len(disciplinas),
+        "modificado_em": embeddings_path.stat().st_mtime,
+    })
+
+
+@app.route("/api/perguntar", methods=["POST"])
+def perguntar():
+    corpo = request.get_json(silent=True) or {}
+    pergunta = (corpo.get("pergunta") or "").strip()
+    if not pergunta:
+        return jsonify({"erro": "pergunta vazia"}), 400
+
+    provider = (corpo.get("provider") or "claude").strip()
+    if provider not in ("claude", "ollama"):
+        return jsonify({"erro": "provider inválido"}), 400
+    modelo = (corpo.get("model") or "").strip() or None
+
+    if not busca_semantica.indice_disponivel():
+        return jsonify({"erro": "Índice semântico não encontrado — rode "
+                                 "\"Currículo interativo — indexar materiais\" primeiro."}), 409
+
+    api_key = None
+    if provider == "claude":
+        env = carregar_env(str(ENV_PATH))
+        api_key = env.get("ANTHROPIC_API_KEY") or ""
+        if not api_key:
+            return jsonify({"erro": "ANTHROPIC_API_KEY não configurada."}), 400
+
+    try:
+        resultado = busca_semantica.responder(pergunta, provider=provider, model=modelo, api_key=api_key)
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
+
+    return jsonify(resultado)
 
 
 @app.route("/api/dados/trajetoria", methods=["GET"])
